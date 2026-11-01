@@ -524,7 +524,7 @@ void PatchAllCreatureCacheWDB(bool enqueueUnknownToAI) {
 HANDLE WINAPI Hooked_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
                                  LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition,
                                  DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
-    if (!g_inCreateFileHook && lpFileName && (dwDesiredAccess & GENERIC_READ) && !(dwDesiredAccess & GENERIC_WRITE)) {
+    if (!g_inCreateFileHook && lpFileName && (dwDesiredAccess & GENERIC_READ)) {
         std::string pathStr(lpFileName);
         std::string lowerPath = ToLowerAscii(pathStr);
         if (lowerPath.find("creaturecache.wdb") != std::string::npos && lowerPath.find(".tmp") == std::string::npos) {
@@ -542,7 +542,7 @@ HANDLE WINAPI Hooked_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD
 HANDLE WINAPI Hooked_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
                                  LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition,
                                  DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
-    if (!g_inCreateFileHook && lpFileName && (dwDesiredAccess & GENERIC_READ) && !(dwDesiredAccess & GENERIC_WRITE)) {
+    if (!g_inCreateFileHook && lpFileName && (dwDesiredAccess & GENERIC_READ)) {
         std::wstring wpath(lpFileName);
         std::wstring lowerW = wpath;
         for (wchar_t& wc : lowerW) {
