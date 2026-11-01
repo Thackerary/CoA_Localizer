@@ -1,3 +1,0 @@
-D:/CoA_Localizer/build/_deps/minhook-subbuild/CMakeFiles/minhook-populate.dir
-D:/CoA_Localizer/build/_deps/minhook-subbuild/CMakeFiles/ALL_BUILD.dir
-D:/CoA_Localizer/build/_deps/minhook-subbuild/CMakeFiles/ZERO_CHECK.dir
