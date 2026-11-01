@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/CoA_Localizer/build/cmake_install.cmake",
+		"D:/CoA_Localizer/build/_deps/minhook-build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

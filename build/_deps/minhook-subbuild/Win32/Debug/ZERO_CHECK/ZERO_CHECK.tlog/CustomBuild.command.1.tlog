@@ -1,0 +1,10 @@
+^D:\COA_LOCALIZER\BUILD\_DEPS\MINHOOK-SUBBUILD\CMAKEFILES\D09F114B994924D33AA6FE38A0B72865\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/CoA_Localizer/build/_deps/minhook-subbuild -BD:/CoA_Localizer/build/_deps/minhook-subbuild --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/CoA_Localizer/build/_deps/minhook-subbuild/minhook-populate.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

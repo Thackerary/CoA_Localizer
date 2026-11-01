@@ -1,0 +1,7 @@
+D:/CoA_Localizer/build/CMakeFiles/version.dir
+D:/CoA_Localizer/build/CMakeFiles/INSTALL.dir
+D:/CoA_Localizer/build/CMakeFiles/ALL_BUILD.dir
+D:/CoA_Localizer/build/CMakeFiles/ZERO_CHECK.dir
+D:/CoA_Localizer/build/_deps/minhook-build/CMakeFiles/minhook.dir
+D:/CoA_Localizer/build/_deps/minhook-build/CMakeFiles/INSTALL.dir
+D:/CoA_Localizer/build/_deps/minhook-build/CMakeFiles/ALL_BUILD.dir

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\CoA_Localizer\build\_deps\minhook-subbuild\CMakeFiles\d09f114b994924d33aa6fe38a0b72865\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{9B854EFF-F4D9-3A08-BF4A-3DF58CC0C95A}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
