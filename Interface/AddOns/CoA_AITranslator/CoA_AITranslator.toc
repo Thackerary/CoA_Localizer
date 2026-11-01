@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: CoA AI Localizer (耿非)
+## Notes: 本插件不售卖，任何收费渠道均为骗子。特别鸣谢：感谢Lee 提供本地字典。
+## Author: 耿非
+## Version: 3.0
+## SavedVariables: CoA_AITranslatorDB
+CoA_AITranslator.lua
