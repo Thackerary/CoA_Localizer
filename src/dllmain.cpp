@@ -65,9 +65,13 @@ static int __cdecl SafeEnumVisibleObjectsThunk(uint64_t guid, void* /*param*/) {
     __try {
         auto fnGetObj = reinterpret_cast<ClntObjMgrObjectPtr_t>(ADDR_OBJECT_PTR);
         void* unitPtr = fnGetObj(guid, 0x0008, "", 0);
-        if (unitPtr && !IsBadReadPtr(unitPtr, 0x100)) {
-            auto fnRebuild = reinterpret_cast<CGUnit_C_RebuildObjectName_t>(ADDR_UNIT_REBUILD_OBJECT_NAME);
-            fnRebuild(unitPtr, 1, 0);
+        if (unitPtr && !IsBadReadPtr(unitPtr, 0x970)) {
+            // 仅对已绑定 CreatureStats_C 缓存块 ([unitPtr + 0x964] != nullptr) 的生物重建 3D 名字
+            void* statsBlock = *reinterpret_cast<void**>(reinterpret_cast<uintptr_t>(unitPtr) + 0x964);
+            if (statsBlock && !IsBadReadPtr(statsBlock, 0x6C)) {
+                auto fnRebuild = reinterpret_cast<CGUnit_C_RebuildObjectName_t>(ADDR_UNIT_REBUILD_OBJECT_NAME);
+                fnRebuild(unitPtr, 1, 0);
+            }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
     return 1;
@@ -800,37 +804,10 @@ bool TranslateCreatureCacheBlockInMemory(void* block) {
             EnqueueForAITranslation(curText);
         }
     }
-    return replacedImmediate;
-}
-
-static std::mutex g_pendingCidMtx;
-static std::unordered_set<int> g_pendingCreatureIds;
-
-bool PollPendingNullCreatureIds() {
-    if (g_shuttingDownCache.load(std::memory_order_acquire)) return false;
-    if (!g_creatureCacheThis || !fp_DbCreatureCache_GetInfoBlockById) return false;
-    std::vector<int> cids;
-    {
-        std::lock_guard<std::mutex> lock(g_pendingCidMtx);
-        if (g_pendingCreatureIds.empty()) return false;
-        cids.assign(g_pendingCreatureIds.begin(), g_pendingCreatureIds.end());
-    }
-    bool anyTranslatedNow = false;
-    uint64_t dummyGuid = 0;
-    for (int cid : cids) {
-        void* block = fp_DbCreatureCache_GetInfoBlockById(g_creatureCacheThis, cid, &dummyGuid, nullptr, 0, 0);
-        if (block) {
-            if (TranslateCreatureCacheBlockInMemory(block)) {
-                anyTranslatedNow = true;
-            }
-            std::lock_guard<std::mutex> lock(g_pendingCidMtx);
-            g_pendingCreatureIds.erase(cid);
-        }
-    }
-    if (anyTranslatedNow) {
+    if (replacedImmediate) {
         g_needRebuild3DNames.store(true, std::memory_order_release);
     }
-    return anyTranslatedNow;
+    return replacedImmediate;
 }
 
 void* __fastcall Hooked_DbCreatureCache_GetInfoBlockById(void* thisPtr, void* /*edx*/, int creatureId, void* a3, void* a4, int a5, unsigned char a6) {
@@ -840,15 +817,8 @@ void* __fastcall Hooked_DbCreatureCache_GetInfoBlockById(void* thisPtr, void* /*
     }
 
     void* block = fp_DbCreatureCache_GetInfoBlockById(thisPtr, creatureId, a3, a4, a5, a6);
-    if (!g_shuttingDownCache.load(std::memory_order_acquire)) {
-        if (block) {
-            TranslateCreatureCacheBlockInMemory(block);
-        } else if (creatureId > 0) {
-            std::lock_guard<std::mutex> lock(g_pendingCidMtx);
-            if (g_pendingCreatureIds.size() < 2000) {
-                g_pendingCreatureIds.insert(creatureId);
-            }
-        }
+    if (!g_shuttingDownCache.load(std::memory_order_acquire) && block) {
+        TranslateCreatureCacheBlockInMemory(block);
     }
     return block;
 }
@@ -1483,59 +1453,11 @@ const char* __cdecl Hooked_lua_tolstring(void* L, int index, size_t* len) {
     };
 
     if (origLen == 10 && strncmp(raw, "@COA_POLL@", 10) == 0) {
-        PollPendingNullCreatureIds();
         ApplyPendingNpcMemoryHotpatches();
         bool npcPatched = g_needRebuild3DNames.exchange(false, std::memory_order_acq_rel);
         bool dirty      = g_hasNewTranslations.exchange(false, std::memory_order_acq_rel) || npcPatched;
         if (npcPatched) {
             ForceRebuildAllVisibleNpc3DNames();
-            if (fp_FrameScript_Execute) {
-				const char* rebuild3DNamesLua = R"LUA(
-					if GlueParent == nil and GetCVar and SetCVar and UIParent then
-						if not _G.CoA_NameRebuilder then
-							_G.CoA_NameRebuilder = CreateFrame("Frame")
-							_G.CoA_NameRebuilder:Hide()
-						end
-						local f = _G.CoA_NameRebuilder
-						local cvars = {
-							"UnitNameNPC",
-							"UnitNameFriendlySpecialNPCName",
-							"UnitNameHostileNPC",
-							"UnitNameInteractiveNPC",
-							"UnitNameNonCombatCreatureName"
-						}
-						if f.saved then
-							for cv, val in pairs(f.saved) do
-								SetCVar(cv, val)
-							end
-							f.saved = nil
-						end
-						f.saved = {}
-						for i = 1, #cvars do
-							local cv = cvars[i]
-							local cur = GetCVar(cv) or "0"
-							f.saved[cv] = cur
-							SetCVar(cv, (cur == "1") and "0" or "1")
-						end
-						f.elapsed = 0
-						f:SetScript("OnUpdate", function(self, dt)
-							self.elapsed = (self.elapsed or 0) + dt
-							if self.elapsed >= 0.15 then
-								self:SetScript("OnUpdate", nil)
-								self:Hide()
-								if self.saved then
-									for cv, val in pairs(self.saved) do
-										SetCVar(cv, val)
-									end
-									f.saved = nil
-								end
-							end
-						end)
-						f:Show()
-					end
-				)LUA";
-				fp_FrameScript_Execute(rebuild3DNamesLua, "CoA_Rebuild3DNpcNames", 0);
-			}
         }
         if (len) *len = 1;
         return dirty ? "1" : "0";
