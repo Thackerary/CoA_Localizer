@@ -290,7 +290,30 @@ bool IsLegacyQuotedMixedKey(const std::string& k) {
     }
     return false;
 }
-
+// 校验译文是否完整保留了英文模板中的所有数字占位符 ({1}, {2} 等)，拦截丢数字的污染词条
+bool HasMatchingPlaceholdersCpp(const std::string& en, const std::string& zh) {
+    // 长句（任务/书籍）或含 SI:{1}、{1}th、{1}H 的专有词条允许译文使用汉字数字（如“军情七处”、“双手”、“十只”）
+    if (en.size() > 28) return true;
+    if (en.find("SI:") != std::string::npos || en.find("th ") != std::string::npos ||
+        en.find("st ") != std::string::npos || en.find("nd ") != std::string::npos ||
+        en.find("rd ") != std::string::npos || en.find("}H") != std::string::npos ||
+        en.find("}h") != std::string::npos) {
+        return true;
+    }
+    for (size_t i = 0; i + 2 < en.size(); ++i) {
+        if (en[i] == '{' && std::isdigit(static_cast<unsigned char>(en[i + 1]))) {
+            size_t closePos = en.find('}', i + 2);
+            if (closePos != std::string::npos && closePos - i <= 4) {
+                std::string token = en.substr(i, closePos - i + 1);
+                if (zh.find(token) == std::string::npos) {
+                    return false;
+                }
+                i = closePos;
+            }
+        }
+    }
+    return true;
+}
 // ==================== 3. 内置术语表、二进制词典 (dict_local.bin) 与 WDB 汉化引擎 ====================
 static const std::pair<const char*, const char*> BUILTIN_TERMS[] = {
     {"Barbarian", "野蛮人"}, {"Guardian", "守护者"}, {"Necromancer", "死灵法师"},
@@ -353,16 +376,39 @@ static const std::pair<const char*, const char*> BUILTIN_TERMS[] = {
     {"Skinning Trainer", "剥皮训练师"}, {"Jewelcrafting Trainer", "珠宝加工训练师"},
     {"Inscription Trainer", "铭文训练师"}, {"Cooking Trainer", "烹饪训练师"},
     {"First Aid Trainer", "急救训练师"}, {"Fishing Trainer", "钓鱼训练师"},
-    {"Riding Trainer", "骑术训练师"}
+    {"Riding Trainer", "骑术训练师"},
+    {"{1} Armor", "{1} 点护甲"}, {"+{1} Armor", "+{1} 护甲"},
+    {"{1} Block", "{1} 格挡"}, {"+{1} Block", "+{1} 格挡"},
+    {"+{1} Stamina", "+{1} 耐力"}, {"-{1} Stamina", "-{1} 耐力"},
+    {"+{1} Strength", "+{1} 力量"}, {"-{1} Strength", "-{1} 力量"},
+    {"+{1} Agility", "+{1} 敏捷"}, {"-{1} Agility", "-{1} 敏捷"},
+    {"+{1} Intellect", "+{1} 智力"}, {"-{1} Intellect", "-{1} 智力"},
+    {"+{1} Spirit", "+{1} 精神"}, {"-{1} Spirit", "-{1} 精神"},
+    {"+{1} All Stats", "+{1} 所有属性"},
+    {"+{1} Attack Power", "+{1} 攻击强度"},
+    {"+{1} Ranged Attack Power", "+{1} 远程攻击强度"},
+    {"+{1} Spell Power", "+{1} 法术强度"},
+    {"+{1} Critical Strike Rating", "+{1} 爆击等级"},
+    {"+{1} Crit Rating", "+{1} 爆击等级"},
+    {"+{1} Haste Rating", "+{1} 急速等级"},
+    {"+{1} Hit Rating", "+{1} 命中等级"},
+    {"+{1} Expertise Rating", "+{1} 精准等级"},
+    {"+{1} Armor Penetration Rating", "+{1} 护甲穿透等级"},
+    {"+{1} Defense Rating", "+{1} 防御等级"},
+    {"+{1} Dodge Rating", "+{1} 躲闪等级"},
+    {"+{1} Parry Rating", "+{1} 招架等级"},
+    {"+{1} Block Rating", "+{1} 格挡等级"},
+    {"+{1} Resilience Rating", "+{1} 韧性等级"},
+    {"{1} - {2} Damage", "{1} - {2} 伤害"},
+    {"Speed {1}", "速度 {1}"},
+    {"({1} damage per second)", "（每秒伤害 {1}）"},
+    {"Durability {1} / {2}", "耐久度 {1} / {2}"},
+    {"Requires Level {1}", "需要等级 {1}"},
+    {"Item Level {1}", "物品等级 {1}"},{"Breath", "呼吸"}, {"BREATH", "呼吸"}, {"Exhaustion", "疲劳"}, {"Feign Death", "假死"}
 };
 
 void InitStaticDictOnce() {
     std::call_once(g_staticInitFlag, []() {
-        for (const auto& kv : BUILTIN_TERMS) {
-            g_staticDict[kv.first] = kv.second;
-            g_staticLowerDict[ToLowerAscii(kv.first)] = kv.second;
-        }
-
         std::error_code ec;
         if (fs::exists(BIN_DICT_FILE, ec)) {
             std::ifstream f(BIN_DICT_FILE, std::ios::binary | std::ios::ate);
@@ -374,7 +420,7 @@ void InitStaticDictOnce() {
                     if (f.read(buf.data(), fileSize)) {
                         if (std::memcmp(buf.data(), "COADICT1", 8) == 0) {
                             uint32_t count = *reinterpret_cast<const uint32_t*>(buf.data() + 8);
-                            g_staticDict.reserve(g_staticDict.size() + count);
+                            g_staticDict.reserve(count + 256);
                             g_staticLowerDict.reserve(262144);
                             size_t offset = 12;
                             const size_t total = buf.size();
@@ -387,7 +433,7 @@ void InitStaticDictOnce() {
                                 offset += enLen;
                                 std::string zh(buf.data() + offset, zhLen);
                                 offset += zhLen;
-                                if (!en.empty() && !zh.empty()) {
+                                if (!en.empty() && !zh.empty() && HasMatchingPlaceholdersCpp(en, zh)) {
                                     if (enLen <= 96 && en.find('\n') == std::string::npos) {
                                         g_staticLowerDict.emplace(ToLowerAscii(en), zh);
                                     }
@@ -399,6 +445,13 @@ void InitStaticDictOnce() {
                 }
             }
         }
+
+        // BUILTIN_TERMS 放在最后用 operator[] 强制覆盖 dict_local.bin 中的同名键
+        for (const auto& kv : BUILTIN_TERMS) {
+            g_staticDict[kv.first] = kv.second;
+            g_staticLowerDict[ToLowerAscii(kv.first)] = kv.second;
+        }
+
         g_staticDictReady.store(true, std::memory_order_release);
     });
 }
@@ -410,7 +463,7 @@ bool LookupLocalDicts(const std::string& key, std::string& outZh) {
         if (it != g_staticDict.end()) {
             std::shared_lock<std::shared_mutex> lock(g_dictMtx);
             auto itUsr = g_dict.find(key);
-            if (itUsr != g_dict.end() && !IsLegacyQuotedMixedKey(key)) {
+            if (itUsr != g_dict.end() && !IsLegacyQuotedMixedKey(key) && HasMatchingPlaceholdersCpp(key, itUsr->second)) {
                 outZh = itUsr->second;
             } else {
                 outZh = it->second;
@@ -419,7 +472,7 @@ bool LookupLocalDicts(const std::string& key, std::string& outZh) {
         }
         if (key.size() <= 96 && key.find('\n') == std::string::npos) {
             auto itLow = g_staticLowerDict.find(ToLowerAscii(key));
-            if (itLow != g_staticLowerDict.end()) {
+            if (itLow != g_staticLowerDict.end() && HasMatchingPlaceholdersCpp(key, itLow->second)) {
                 outZh = itLow->second;
                 return true;
             }
@@ -428,7 +481,7 @@ bool LookupLocalDicts(const std::string& key, std::string& outZh) {
     {
         std::shared_lock<std::shared_mutex> lock(g_dictMtx);
         auto it = g_dict.find(key);
-        if (it != g_dict.end() && !IsLegacyQuotedMixedKey(key)) {
+        if (it != g_dict.end() && !IsLegacyQuotedMixedKey(key) && HasMatchingPlaceholdersCpp(key, it->second)) {
             outZh = it->second;
             return true;
         }
@@ -454,7 +507,7 @@ bool LookupLocalDicts(const std::string& key, std::string& outZh) {
         {
             std::shared_lock<std::shared_mutex> lock(g_dictMtx);
             auto it = g_dict.find(norm);
-            if (it != g_dict.end() && !IsLegacyQuotedMixedKey(norm)) {
+            if (it != g_dict.end() && !IsLegacyQuotedMixedKey(norm) && HasMatchingPlaceholdersCpp(norm, it->second)) {
                 outZh = it->second;
                 return true;
             }
@@ -865,7 +918,16 @@ bool TryLoadDictFromFile(const std::string& path) {
             for (auto& [k, v] : j.items()) {
                 if (v.is_string()) {
                     std::string vStr = v.get<std::string>();
-                    if (IsLegacyQuotedMixedKey(k) || vStr == k || !HasCJKBytes(vStr)) {
+                    // 自动剥离因聊天框 || 转义而残留在译文开头的孤立 '|' 符号（保留合法的 |c / |T / |H / |r / |n 标签）
+                    if (!vStr.empty() && vStr.front() == '|') {
+                        if (vStr.size() < 2 || (vStr[1] != 'c' && vStr[1] != 'C' && vStr[1] != 'T' && vStr[1] != 'H' && vStr[1] != 'r' && vStr[1] != 'n')) {
+                            while (!vStr.empty() && vStr.front() == '|') {
+                                vStr.erase(0, 1);
+                            }
+                            prunedLegacy = true;
+                        }
+                    }
+                    if (IsLegacyQuotedMixedKey(k) || vStr == k || !HasCJKBytes(vStr) || !HasMatchingPlaceholdersCpp(k, vStr) || k == "{1} Armor") {
                         prunedLegacy = true;
                         continue;
                     }
@@ -975,7 +1037,8 @@ static const std::pair<const char*, const char*> ZH_TERM_FIXES[] = {
     {"符文巨匠", "符文大师"},
     {"观星者",   "唤星者"},
     {"太阳牧师", "太阳祭司"},
-    {"無境銀行", "禁止使用银行"}
+    {"無境銀行", "禁止使用银行"},
+	{"拉然苹果碗", "呼吸"}
 };
 
 void ApplyZhTermFixesInPlace(std::string& s) {
@@ -1233,7 +1296,7 @@ std::unordered_map<std::string, std::string> RequestAIBatchTranslation(const std
                         if (npcTagPos != std::string::npos) zh.erase(npcTagPos, 5);
                         while (!zh.empty() && zh.back() == ' ') zh.pop_back();
                         ApplyZhTermFixesInPlace(zh);
-                        if (!zh.empty() && zh != batch[i] && HasCJKBytes(zh)) {
+                        if (!zh.empty() && zh != batch[i] && HasCJKBytes(zh) && HasMatchingPlaceholdersCpp(batch[i], zh)) {
                             results[batch[i]] = zh;
                         }
                     }
@@ -1641,14 +1704,21 @@ const char* __cdecl Hooked_lua_tolstring(void* L, int index, size_t* len) {
             size_t sep = body.find('|');
             if (sep != std::string::npos) {
                 std::string en = body.substr(0, sep);
-                std::string zh = body.substr(sep + 1);
-                {
-                    std::unique_lock<std::shared_mutex> lock(g_dictMtx);
-                    g_dict[en] = zh;
+                while (!en.empty() && (en.back() == ' ' || en.back() == '\t')) en.pop_back();
+                size_t zhStart = sep + 1;
+                while (zhStart < body.size() && (body[zhStart] == '|' || body[zhStart] == ' ' || body[zhStart] == '\t')) {
+                    ++zhStart;
                 }
-                SaveDict();
-                g_wdbDirtyForPatch.store(true, std::memory_order_release);
-                g_hasNewTranslations.store(true, std::memory_order_release);
+                std::string zh = body.substr(zhStart);
+                if (!en.empty() && !zh.empty()) {
+                    {
+                        std::unique_lock<std::shared_mutex> lock(g_dictMtx);
+                        g_dict[en] = zh;
+                    }
+                    SaveDict();
+                    g_wdbDirtyForPatch.store(true, std::memory_order_release);
+                    g_hasNewTranslations.store(true, std::memory_order_release);
+                }
             }
         } else if (cmd == "RELOAD") {
             LoadConfigAndDict();
@@ -1710,6 +1780,8 @@ void __cdecl Hooked_FrameScript_Execute(const char* script, const char* scriptNa
 }
 
 // ==================== 11. DLL 入口 ====================
+static HMODULE g_hLuxVelum = nullptr;//兼容LuxVelum渲染补丁
+
 DWORD WINAPI InitThread(LPVOID) {
     // 先加载配置与本地词库，确保 Hook 启用瞬间词典已 100% 就绪
     LoadConfigAndDict();
@@ -1755,6 +1827,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         InitVersionProxy();
+        // 在主线程进入 WinMain 之前同步拉起 LuxVelum.dll，确保其拦截 [0x00B2ED98]
+        g_hLuxVelum = LoadLibraryA("LuxVelum.dll");
         CreateThread(nullptr, 0, InitThread, nullptr, 0, nullptr);
     } else if (reason == DLL_PROCESS_DETACH) {
         g_running.store(false, std::memory_order_release);
@@ -1765,6 +1839,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         if (lpReserved == nullptr) {
             MH_DisableHook(MH_ALL_HOOKS);
             MH_Uninitialize();
+            if (g_hLuxVelum) {
+                FreeLibrary(g_hLuxVelum);
+                g_hLuxVelum = nullptr;
+            }
             FreeVersionProxy();
         }
     }

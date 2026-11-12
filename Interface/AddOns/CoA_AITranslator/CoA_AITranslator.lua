@@ -371,6 +371,79 @@ local COA_BUILTIN_TERMS = {
 	["Game"]                            = "游戏",
     ["AddOns"]                          = "插件",
     ["Mouse"]                           = "鼠标",
+	-- 装备护甲、属性加成、抗性与附魔核心模板（最高优先级，直接覆盖词库污染）
+    ["{1} Armor"]                       = "{1} 点护甲",
+    ["+{1} Armor"]                      = "+{1} 护甲",
+    ["{1} Block"]                       = "{1} 格挡",
+    ["+{1} Block"]                      = "+{1} 格挡",
+    ["+{1} Block Value"]                = "+{1} 格挡值",
+    ["Reinforced (+{1} Armor)"]         = "加固（+{1} 护甲）",
+    ["+{1} Stamina"]                    = "+{1} 耐力",
+    ["-{1} Stamina"]                    = "-{1} 耐力",
+    ["+{1} Strength"]                   = "+{1} 力量",
+    ["-{1} Strength"]                   = "-{1} 力量",
+    ["+{1} Agility"]                    = "+{1} 敏捷",
+    ["-{1} Agility"]                    = "-{1} 敏捷",
+    ["+{1} Intellect"]                  = "+{1} 智力",
+    ["-{1} Intellect"]                  = "-{1} 智力",
+    ["+{1} Spirit"]                     = "+{1} 精神",
+    ["-{1} Spirit"]                     = "-{1} 精神",
+    ["+{1} All Stats"]                  = "+{1} 所有属性",
+    ["+{1} Attack Power"]               = "+{1} 攻击强度",
+    ["+{1} Ranged Attack Power"]        = "+{1} 远程攻击强度",
+    ["+{1} Spell Power"]                = "+{1} 法术强度",
+    ["+{1} Health"]                     = "+{1} 生命值",
+    ["+{1} Mana"]                       = "+{1} 法力值",
+    ["+{1} Critical Strike Rating"]     = "+{1} 爆击等级",
+    ["+{1} Crit Rating"]                = "+{1} 爆击等级",
+    ["+{1} Haste Rating"]               = "+{1} 急速等级",
+    ["+{1} Hit Rating"]                 = "+{1} 命中等级",
+    ["+{1} Expertise Rating"]           = "+{1} 精准等级",
+    ["+{1} Armor Penetration Rating"]   = "+{1} 护甲穿透等级",
+    ["+{1} Spell Penetration"]          = "+{1} 法术穿透",
+    ["+{1} Defense Rating"]             = "+{1} 防御等级",
+    ["+{1} Dodge Rating"]               = "+{1} 躲闪等级",
+    ["+{1} Parry Rating"]               = "+{1} 招架等级",
+    ["+{1} Block Rating"]               = "+{1} 格挡等级",
+    ["+{1} Resilience Rating"]          = "+{1} 韧性等级",
+    ["+{1} PvP Power"]                  = "+{1} PvP强度",
+    ["+{1} Arcane Resistance"]          = "+{1} 奥术抗性",
+    ["+{1} Fire Resistance"]            = "+{1} 火焰抗性",
+    ["+{1} Nature Resistance"]          = "+{1} 自然抗性",
+    ["+{1} Frost Resistance"]           = "+{1} 冰霜抗性",
+    ["+{1} Shadow Resistance"]          = "+{1} 暗影抗性",
+    ["+{1} All Resistances"]            = "+{1} 所有抗性",
+    ["{1} - {2} Damage"]                = "{1} - {2} 伤害",
+    ["+{1} - {2} Damage"]               = "+{1} - {2} 伤害",
+    ["Speed {1}"]                       = "速度 {1}",
+    ["({1} damage per second)"]         = "（每秒伤害 {1}）",
+    ["Durability {1} / {2}"]            = "耐久度 {1} / {2}",
+    ["Requires Level {1}"]              = "需要等级 {1}",
+    ["Item Level {1}"]                  = "物品等级 {1}",
+    ["Binds when picked up"]            = "拾取后绑定",
+    ["Binds when equipped"]             = "装备后绑定",
+    ["Binds to account"]                = "账号绑定",
+    ["Unique"]                          = "唯一",
+    ["Unique ({1})"]                    = "唯一 ({1})",
+    ["Unique-Equipped"]                 = "装备唯一",
+    ["Stamina"]                         = "耐力",
+    ["Strength"]                        = "力量",
+    ["Agility"]                         = "敏捷",
+    ["Intellect"]                       = "智力",
+    ["Spirit"]                          = "精神",
+    ["Armor"]                           = "护甲",
+    ["Attack Power"]                    = "攻击强度",
+    ["Spell Power"]                     = "法术强度",
+    ["Critical Strike Rating"]          = "爆击等级",
+    ["Haste Rating"]                    = "急速等级",
+    ["Hit Rating"]                      = "命中等级",
+    ["Expertise Rating"]                = "精准等级",
+    ["Armor Penetration Rating"]        = "护甲穿透等级",
+    ["Defense Rating"]                  = "防御等级",
+    ["Dodge Rating"]                    = "躲闪等级",
+    ["Parry Rating"]                    = "招架等级",
+    ["Block Rating"]                    = "格挡等级",
+    ["Resilience Rating"]               = "韧性等级",
 }
 
 local INLINE_RACE_CLASS_LIST = {
@@ -561,21 +634,34 @@ local function DictStore(key, value)
     if CoA_GlueDict then CoA_GlueDict[key] = value end
 end
 
+-- 校验译文是否完整保留了原模板中的所有数字占位符 {1}, {2}，防止污染词条吞掉护甲或属性数值
+local function HasValidPlaceholders(tmpl, zh)
+    if type(tmpl) ~= "string" or type(zh) ~= "string" or zh == "" then return false end
+    if #tmpl > 28 then return true end
+    if tmpl:find("SI:", 1, true) or tmpl:find("}[tnhspTNHSP]") then return true end
+    for ph in tmpl:gmatch("({%d+})") do
+        if not string.find(zh, ph, 1, true) then
+            return false
+        end
+    end
+    return true
+end
+
 local function LookupDict(tmpl)
     if type(tmpl) ~= "string" or tmpl == "" then return nil end
     local zh = L0_TemplateCache[tmpl]
-    if zh then return zh end
+    if zh and HasValidPlaceholders(tmpl, zh) then return zh end
     if L0_MissCache[tmpl] then return nil end
 
     zh = DictLookup(tmpl)
-    if zh then
+    if zh and HasValidPlaceholders(tmpl, zh) then
         L0_TemplateCache[tmpl] = zh
         return zh
     end
     if string.find(tmpl, "\r", 1, true) then
         local norm = tmpl:gsub("\r\n", "\n"):gsub("\r", "\n")
         zh = L0_TemplateCache[norm] or DictLookup(norm)
-        if zh then
+        if zh and HasValidPlaceholders(tmpl, zh) then
             L0_TemplateCache[tmpl] = zh
             return zh
         end
@@ -597,7 +683,7 @@ local function LookupDict(tmpl)
         backendEchoCount = 0
         backendState = "ok"
         backendAvailable = true
-        if type(res) == "string" and res ~= "" and res ~= tmpl then
+        if type(res) == "string" and res ~= "" and res ~= tmpl and HasValidPlaceholders(tmpl, res) then
             L0_TemplateCache[tmpl] = res
             return res
         end
@@ -1053,6 +1139,15 @@ LookupWithDecoration = function(tmpl, vars)
         if not p then p, r = string.match(rest, "^([%-•]+%s*{%d+}%s*/%s*{%d+}%s*:?%s*)(.+)$") end
         if not p then p, r = string.match(rest, "^({%d+}%s*/%s*{%d+}%s*:?%s*)(.+)$") end
         if not p then p, r = string.match(rest, "^([%-•]+%s+)(.+)$") end
+        if not p then
+            local sbRest = string.match(rest, "^[Ss]ocket [Bb]onus:%s*(.+)$")
+            if sbRest then p, r = "镶嵌奖励：", sbRest end
+        end
+        if not p then
+            local encRest = string.match(rest, "^[Ee]nchanted:%s*(.+)$")
+            if encRest then p, r = "附魔：", encRest end
+        end
+        if not p then p, r = string.match(rest, "^([%+%-]{%d+}%%?%s+)(.+)$") end
         if not p then break end
         prefix = prefix .. p
         rest = r
@@ -2983,8 +3078,9 @@ end
 
 local function ExecuteFixEntry(en, zh)
     if not en or not zh then return end
-    en = en:match("^%s*(.-)%s*$")
-    zh = zh:match("^%s*(.-)%s*$")
+    -- 剥离聊天框将 | 自动转义为 || 后残留的首尾竖线与空白字符
+    en = en:gsub("[|\239\189\156]+$", ""):match("^%s*(.-)%s*$")
+    zh = zh:gsub("^[|\239\189\156]+", ""):match("^%s*(.-)%s*$")
     if en == "" or zh == "" then return end
 
     if not en:find("{[A-Z0-9]+}") then
@@ -3520,7 +3616,10 @@ SlashCmdList["COATRANS"] = function(msg)
             DEFAULT_CHAT_FRAME:AddMessage("|cff00ccff[当前补充 Prompt]|r " .. tostring(DB.extraPrompt or "（空）"))
         end
     elseif cmd == "fix" and arg ~= "" then
-        local en, zh = arg:match("^(.-)|(.*)$")
+        local en, zh = arg:match("^(.-)|+(.*)$")
+        if not en then
+            en, zh = arg:match("^(.-)\239\189\156+(.*)$")
+        end
         if en and zh then
             ExecuteFixEntry(en, zh)
         end
