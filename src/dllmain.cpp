@@ -159,6 +159,7 @@ void RestoreAllOriginalNpcSlotPtrs() {
     }
     g_originalSlotPtrs.clear();
     g_watchedNpcSlots.clear();
+    g_hasPendingNpcHotpatch.store(false, std::memory_order_release);
 }
 
 void MarkAsKnownNpcString(const std::string& enText) {
@@ -619,7 +620,9 @@ void PatchSingleCreatureCacheWDB(const fs::path& wdbPath, bool enqueueUnknownToA
 
             if (!strs[0].empty() && !HasCJKBytes(strs[0]) && HasTwoConsecutiveAlpha(strs[0])) {
                 std::string zhName;
-                if (LookupLocalDicts(strs[0], zhName) && !zhName.empty() && zhName != strs[0]) {
+                if ((LookupLocalDicts(strs[0], zhName) || TryReplaceInlineRaceClassCpp(strs[0], zhName)) &&
+                    !zhName.empty() && zhName != strs[0]) {
+                    ApplyZhTermFixesInPlace(zhName);
                     strs[0] = zhName;
                     anyModified = true;
                 } else if (enqueueUnknownToAI && toEnqueue.size() < 150) {
@@ -629,7 +632,9 @@ void PatchSingleCreatureCacheWDB(const fs::path& wdbPath, bool enqueueUnknownToA
 
             if (!strs[4].empty() && !HasCJKBytes(strs[4]) && HasTwoConsecutiveAlpha(strs[4])) {
                 std::string zhSub;
-                if (LookupLocalDicts(strs[4], zhSub) && !zhSub.empty() && zhSub != strs[4]) {
+                if ((LookupLocalDicts(strs[4], zhSub) || TryReplaceInlineRaceClassCpp(strs[4], zhSub)) &&
+                    !zhSub.empty() && zhSub != strs[4]) {
+                    ApplyZhTermFixesInPlace(zhSub);
                     strs[4] = zhSub;
                     anyModified = true;
                 } else if (enqueueUnknownToAI && toEnqueue.size() < 150) {
@@ -706,7 +711,7 @@ HANDLE WINAPI Hooked_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD
         if (lowerPath.find("creaturecache.wdb") != std::string::npos && lowerPath.find(".tmp") == std::string::npos) {
             g_inCreateFileHook = true;
             try {
-                PatchSingleCreatureCacheWDB(fs::path(pathStr), false);
+                PatchSingleCreatureCacheWDB(fs::path(pathStr), true);
             } catch (...) {}
             g_inCreateFileHook = false;
         }
@@ -727,7 +732,7 @@ HANDLE WINAPI Hooked_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWOR
         if (lowerW.find(L"creaturecache.wdb") != std::wstring::npos && lowerW.find(L".tmp") == std::wstring::npos) {
             g_inCreateFileHook = true;
             try {
-                PatchSingleCreatureCacheWDB(fs::path(wpath), false);
+                PatchSingleCreatureCacheWDB(fs::path(wpath), true);
             } catch (...) {}
             g_inCreateFileHook = false;
         }
@@ -823,8 +828,9 @@ void* __fastcall Hooked_DbCreatureCache_GetInfoBlockById(void* thisPtr, void* /*
     return block;
 }
 
-// 拦截客户端退出时的缓存销毁函数 (0x0066F910)：
-// 先恢复所有被替换的原始指针，让客户端原生 SMemFree 零报错释放，写盘后再将 creaturecache.wdb 刷成中文
+// 拦截客户端缓存销毁函数 (0x0066F910)：
+// 该函数不仅在退出客户端时调用，在登录界面切换不同服务器 (Realm) 时也会调用以卸载旧服缓存。
+// 先恢复原始指针供客户端原生 SMemFree 安全释放，释放完成后必须立即将 g_shuttingDownCache 复位为 false！
 void __fastcall Hooked_DbCache_Shutdown(void* thisPtr, void* /*edx*/) {
     if (thisPtr == g_creatureCacheThis) {
         g_shuttingDownCache.store(true, std::memory_order_release);
@@ -832,6 +838,7 @@ void __fastcall Hooked_DbCache_Shutdown(void* thisPtr, void* /*edx*/) {
     }
     fp_DbCache_Shutdown(thisPtr);
     if (thisPtr == g_creatureCacheThis) {
+        g_shuttingDownCache.store(false, std::memory_order_release);
         PatchAllCreatureCacheWDB(false);
     }
 }
